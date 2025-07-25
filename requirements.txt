@@ -12,3 +12,4 @@ sympy
 torch
 tqdm
 PyWavelets
+accelerate

@@ -28,7 +28,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             self.args.frequency_map = M4Meta.frequency_map[self.args.seasonal_patterns]
         model = self.model_dict[self.args.model].Model(self.args).float()
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            # accelerate will handle model placement and parallelization
+            return model
+        elif self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
