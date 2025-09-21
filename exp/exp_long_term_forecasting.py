@@ -81,12 +81,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
                     batch_y = batch_y.to(self.device)
 
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
+                pred = outputs.detach()
+                true = batch_y.detach()
 
                 loss = criterion(pred, true)
 
-                total_loss.append(loss)
+                total_loss.append(loss.item())
         total_loss = np.average(total_loss)
         self.model.train()
         return total_loss
