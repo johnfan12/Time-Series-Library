@@ -22,7 +22,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
 
-        if self.args.use_multi_gpu and self.args.use_gpu:
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            # accelerate will handle model placement and parallelization
+            return model
+        elif self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
@@ -44,24 +47,39 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float()
-
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # accelerate handles device placement automatically
+                    batch_x = batch_x.float()
+                    batch_y = batch_y.float()
+                    batch_x_mark = batch_x_mark.float()
+                    batch_y_mark = batch_y_mark.float()
+                else:
+                    batch_x = batch_x.float().to(self.device)
+                    batch_y = batch_y.float()
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+                if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
+                    dec_inp = dec_inp.to(self.device)
+                    
                 # encoder - decoder
-                if self.args.use_amp:
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # Use accelerate's autocast if mixed precision is enabled
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                elif self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
+                if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
+                    batch_y = batch_y.to(self.device)
 
                 pred = outputs.detach()
                 true = batch_y.detach()
@@ -90,7 +108,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
-        if self.args.use_amp:
+        # Prepare for accelerate if using it
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            self.model, model_optim, train_loader, vali_loader = self.accelerator.prepare(
+                self.model, model_optim, train_loader, vali_loader
+            )
+        elif self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
         for epoch in range(self.args.train_epochs):
@@ -102,17 +125,36 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                
+                # Handle data placement for accelerate or regular training
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # accelerate handles device placement automatically
+                    batch_x = batch_x.float()
+                    batch_y = batch_y.float()
+                    batch_x_mark = batch_x_mark.float()
+                    batch_y_mark = batch_y_mark.float()
+                else:
+                    batch_x = batch_x.float().to(self.device)
+                    batch_y = batch_y.float().to(self.device)
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+                if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
+                    dec_inp = dec_inp.to(self.device)
 
                 # encoder - decoder
-                if self.args.use_amp:
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # Use accelerate's autocast if mixed precision is enabled
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    f_dim = -1 if self.args.features == 'MS' else 0
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:]
+                    loss = criterion(outputs, batch_y)
+                    train_loss.append(loss.item())
+                elif self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
@@ -138,7 +180,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     iter_count = 0
                     time_now = time.time()
 
-                if self.args.use_amp:
+                # Handle backward pass for accelerate or regular training
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    self.accelerator.backward(loss)
+                    model_optim.step()
+                elif self.args.use_amp:
                     scaler.scale(loss).backward()
                     scaler.step(model_optim)
                     scaler.update()
@@ -153,7 +199,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
+            
+            # Handle model saving for accelerate
+            if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                # Use accelerator's unwrap_model for saving
+                unwrapped_model = self.accelerator.unwrap_model(self.model)
+                early_stopping(vali_loss, unwrapped_model, path)
+            else:
+                early_stopping(vali_loss, self.model, path)
+                
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
@@ -161,7 +215,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         best_model_path = path + '/' + 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path))
+        
+        # Handle model loading for accelerate
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            # Load state dict to unwrapped model
+            unwrapped_model = self.accelerator.unwrap_model(self.model)
+            unwrapped_model.load_state_dict(torch.load(best_model_path, map_location=self.device))
+        else:
+            self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
 
@@ -169,7 +230,16 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+            checkpoint_path = os.path.join('./checkpoints/' + setting, 'checkpoint.pth')
+            if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                unwrapped_model = self.accelerator.unwrap_model(self.model)
+                unwrapped_model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
+            else:
+                self.model.load_state_dict(torch.load(checkpoint_path))
+
+        # Prepare test_loader for accelerate if needed
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            test_loader = self.accelerator.prepare(test_loader)
 
         preds = []
         trues = []
@@ -180,17 +250,29 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         self.model.eval()
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float().to(self.device)
-
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # accelerate handles device placement automatically
+                    batch_x = batch_x.float()
+                    batch_y = batch_y.float()
+                    batch_x_mark = batch_x_mark.float()
+                    batch_y_mark = batch_y_mark.float()
+                else:
+                    batch_x = batch_x.float().to(self.device)
+                    batch_y = batch_y.float().to(self.device)
+                    batch_x_mark = batch_x_mark.float().to(self.device)
+                    batch_y_mark = batch_y_mark.float().to(self.device)
 
                 # decoder input
                 dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float()
+                if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
+                    dec_inp = dec_inp.to(self.device)
+                    
                 # encoder - decoder
-                if self.args.use_amp:
+                if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+                    # Use accelerate's autocast if mixed precision is enabled
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                elif self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
@@ -198,7 +280,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, :]
-                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
+                batch_y = batch_y[:, -self.args.pred_len:, :]
+                if not (hasattr(self.args, 'use_accelerate') and self.args.use_accelerate):
+                    batch_y = batch_y.to(self.device)
+                    
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
                 if test_data.scale and self.args.inverse:

@@ -1,5 +1,6 @@
 import os
 import torch
+from accelerate import Accelerator
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
@@ -9,6 +10,15 @@ from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer,
 class Exp_Basic(object):
     def __init__(self, args):
         self.args = args
+        
+        # Initialize accelerator if using accelerate
+        if hasattr(args, 'use_accelerate') and args.use_accelerate:
+            self.accelerator = Accelerator(mixed_precision=args.mixed_precision if hasattr(args, 'mixed_precision') else 'no')
+            self.device = self.accelerator.device
+        else:
+            self.accelerator = None
+            self.device = self._acquire_device()
+            
         self.model_dict = {
             'TimesNet': TimesNet,
             'Autoformer': Autoformer,
@@ -46,8 +56,9 @@ class Exp_Basic(object):
             from models import Mamba
             self.model_dict['Mamba'] = Mamba
 
-        self.device = self._acquire_device()
-        self.model = self._build_model().to(self.device)
+        self.model = self._build_model()
+        if not (hasattr(args, 'use_accelerate') and args.use_accelerate):
+            self.model = self.model.to(self.device)
 
     def _build_model(self):
         raise NotImplementedError

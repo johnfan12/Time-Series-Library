@@ -27,7 +27,11 @@ class Exp_Classification(Exp_Basic):
         self.args.num_class = len(train_data.class_names)
         # model init
         model = self.model_dict[self.args.model].Model(self.args).float()
-        if self.args.use_multi_gpu and self.args.use_gpu:
+        
+        if hasattr(self.args, 'use_accelerate') and self.args.use_accelerate:
+            # accelerate will handle model placement and parallelization
+            return model
+        elif self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
