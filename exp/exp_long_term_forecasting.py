@@ -38,7 +38,19 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        class StridedMSELoss(nn.Module):
+            def __init__(self, stride=6):
+                super(StridedMSELoss, self).__init__()
+                self.stride = stride
+                self.mse = nn.MSELoss()
+            
+            def forward(self, pred, target):
+                # 只计算每stride个点的MSE损失
+                strided_pred = pred[:, ::self.stride, :]
+                strided_target = target[:, ::self.stride, :]
+                return self.mse(strided_pred, strided_target)
+        
+        criterion = StridedMSELoss(stride=6)
         return criterion
  
 
