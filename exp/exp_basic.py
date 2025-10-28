@@ -4,7 +4,7 @@ from accelerate import Accelerator
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
-    WPMixer, MultiPatchFormer, KANAD
+    WPMixer, MultiPatchFormer, KANAD, Sundial
 
 
 class Exp_Basic(object):
@@ -50,6 +50,7 @@ class Exp_Basic(object):
             'WPMixer': WPMixer,
             'MultiPatchFormer': MultiPatchFormer,
             'KANAD': KANAD,
+            'Sundial': Sundial,
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')

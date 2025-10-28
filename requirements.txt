@@ -11,4 +11,4 @@ sktime
 sympy
 torch
 tqdm
-PyWavelets
+PyWaveletstransformers

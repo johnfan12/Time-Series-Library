@@ -143,6 +143,9 @@ if __name__ == '__main__':
 
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
+    
+    # Sundial
+    parser.add_argument('--input_token_len', type=int, default=16, help='input token length for Sundial model')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
