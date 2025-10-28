@@ -146,6 +146,9 @@ if __name__ == '__main__':
     
     # Sundial
     parser.add_argument('--input_token_len', type=int, default=16, help='input token length for Sundial model')
+    parser.add_argument('--num_sampling_steps', type=int, default=10, help='number of sampling steps for Sundial flow matching (higher=better quality but slower)')
+    parser.add_argument('--flow_loss_depth', type=int, default=3, help='depth of flow loss network for Sundial (higher=more expressive)')
+    parser.add_argument('--diffusion_batch_mul', type=int, default=4, help='batch multiplier for diffusion training in Sundial')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:

@@ -33,6 +33,11 @@ class Model(nn.Module):
         # Get input_token_len from configs, default to 16 if not specified
         input_token_len = getattr(configs, 'input_token_len', 16)
         
+        # Get advanced Sundial parameters from configs
+        num_sampling_steps = getattr(configs, 'num_sampling_steps', 10)
+        flow_loss_depth = getattr(configs, 'flow_loss_depth', 3)
+        diffusion_batch_mul = getattr(configs, 'diffusion_batch_mul', 4)
+        
         # Create Sundial configuration
         self.config = SundialConfig(
             input_token_len=input_token_len,
@@ -45,9 +50,9 @@ class Model(nn.Module):
             use_cache=False,
             dropout_rate=configs.dropout,
             max_position_embeddings=10000,
-            num_sampling_steps=5,  # Reduce from default 50 for faster inference
-            flow_loss_depth=2,  # Reduce depth for faster training
-            diffusion_batch_mul=2,  # Reduce batch multiplier
+            num_sampling_steps=num_sampling_steps,  # Higher = better quality, slower
+            flow_loss_depth=flow_loss_depth,  # Higher = more expressive, slower
+            diffusion_batch_mul=diffusion_batch_mul,  # Higher = more stable training
         )
         
         # Initialize Sundial model
