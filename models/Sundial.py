@@ -83,8 +83,6 @@ class Model(nn.Module):
         # Reshape to [batch_size, seq_len] for Sundial input
         x_enc = x_enc.squeeze(-1)  # [batch_size, seq_len]
         
-        print(f"[DEBUG] Input shape: {x_enc.shape}, batch_size: {batch_size}, pred_len: {self.pred_len}")
-        
         # Use the model's forward method for inference
         # Pass labels=None to trigger inference mode in SundialForPrediction
         outputs = self.model(
@@ -95,14 +93,10 @@ class Model(nn.Module):
             num_samples=1,
         )
         
-        print(f"[DEBUG] Model output type: {type(outputs)}, has logits: {hasattr(outputs, 'logits')}")
-        
         # Get predictions from the model output
         # outputs.logits contains the predictions: [batch_size, num_samples, pred_len]
         predictions = outputs.logits
-        
-        print(f"[DEBUG] Predictions shape before processing: {predictions.shape if predictions is not None else 'None'}")
-        
+
         # Ensure predictions has correct shape
         if predictions is None:
             # Fallback: create dummy predictions with correct shape

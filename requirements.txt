@@ -11,4 +11,5 @@ sktime
 sympy
 torch
 tqdm
-PyWaveletstransformers
+transformers
+accelerate
