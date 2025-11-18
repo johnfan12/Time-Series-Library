@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 from utils.dtw_metric import dtw, accelerated_dtw
 from utils.augmentation import run_augmentation, run_augmentation_single
+from utils.losses import MultiObjectiveTimeSeriesLoss
 
 warnings.filterwarnings('ignore')
 
@@ -35,8 +36,26 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return model_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
-        return criterion
+        loss_name = self.args.loss.lower()
+        if loss_name == 'mse':
+            return nn.MSELoss()
+        if loss_name in ('multi', 'multiobj', 'multiobjective'):
+            period = getattr(self.args, 'season_period', 0)
+            period = period if period and period > 0 else None
+            return MultiObjectiveTimeSeriesLoss(
+                period=period,
+                trend_window=getattr(self.args, 'trend_window', 7),
+                jump_horizon=getattr(self.args, 'jump_horizon', 2),
+                jump_threshold=getattr(self.args, 'jump_threshold', 1.0),
+                jump_pre_days=getattr(self.args, 'jump_pre_days', 5),
+                alpha=getattr(self.args, 'loss_alpha', 1.0),
+                beta=getattr(self.args, 'loss_beta', 0.5),
+                gamma=getattr(self.args, 'loss_gamma', 0.5),
+                delta=getattr(self.args, 'loss_delta', 1.0),
+                jump_base_weight=getattr(self.args, 'jump_base_weight', 1.0),
+                jump_scale=getattr(self.args, 'jump_scale', 5.0),
+            )
+        raise ValueError(f"Unsupported loss type: {self.args.loss}")
  
 
     def vali(self, vali_data, vali_loader, criterion):
