@@ -30,7 +30,7 @@ python -u run.py \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh1.csv \
   --model_id ETTh1_96_192 \
-  --model $model_name \
+  --model PatchTST \
   --data ETTh1 \
   --features M \
   --seq_len 96 \
@@ -52,7 +52,7 @@ python -u run.py \
   --root_path ./dataset/ETT-small/ \
   --data_path ETTh1.csv \
   --model_id ETTh1_96_336 \
-  --model $model_name \
+  --model PatchTST \
   --data ETTh1 \
   --features M \
   --seq_len 96 \
