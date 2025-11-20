@@ -1,3 +1,4 @@
+import math
 from typing import Optional, Tuple
 
 import torch
@@ -43,26 +44,56 @@ class SimpleTSFeature(nn.Module):
         return self.proj(stats)
 
 
-class SimpleBackbone(nn.Module):
-    """Simple MLP backbone shared across all windows."""
+class PositionalEncoding(nn.Module):
+    """Standard sine-cosine positional encoding."""
 
-    def __init__(self, seq_len: int, in_channels: int, d_model: int):
+    def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
-        self.seq_len = seq_len
-        self.in_channels = in_channels
-        input_dim = seq_len * in_channels
-
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, d_model),
-            nn.ReLU(),
-            nn.Linear(d_model, d_model),
-            nn.ReLU(),
-        )
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self._pos_table: torch.Tensor
+        self.register_buffer('_pos_table', pe.unsqueeze(0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, L, C = x.shape
-        x_flat = x.reshape(B, L * C)
-        return self.net(x_flat)
+        return self._pos_table[:, :x.size(1), :]
+
+
+class TransformerBackbone(nn.Module):
+    """Transformer encoder backbone shared across all windows."""
+
+    def __init__(
+        self,
+        seq_len: int,
+        in_channels: int,
+        d_model: int,
+        n_heads: int,
+        n_layers: int,
+        d_ff: int,
+        dropout: float,
+    ):
+        super().__init__()
+        self.input_proj = nn.Linear(in_channels, d_model)
+        self.positional_encoding = PositionalEncoding(d_model, max_len=seq_len)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=n_heads,
+            dim_feedforward=d_ff,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, L, C]
+        h = self.input_proj(x)
+        h = h + self.positional_encoding(h)
+        h = self.encoder(h)
+        h = self.norm(h)
+        return h.mean(dim=1)
 
 
 class HyperLinear(nn.Module):
@@ -93,7 +124,7 @@ class HyperLinear(nn.Module):
 
 
 class Model(nn.Module):
-    """HyperTS forecasting model with a shared MLP backbone and hypernetwork head."""
+    """HyperTS forecasting model with a Transformer backbone and hypernetwork head."""
 
     def __init__(self, configs):
         super().__init__()
@@ -118,10 +149,19 @@ class Model(nn.Module):
             d_feat=d_feat,
         )
 
-        self.backbone = SimpleBackbone(
+        n_heads = getattr(configs, "n_heads", 4)
+        n_layers = getattr(configs, "e_layers", 2)
+        d_ff = getattr(configs, "d_ff", d_model * 4)
+        dropout = getattr(configs, "dropout", 0.1)
+
+        self.backbone = TransformerBackbone(
             seq_len=self.seq_len,
             in_channels=self.c_in,
             d_model=d_model,
+            n_heads=n_heads,
+            n_layers=n_layers,
+            d_ff=d_ff,
+            dropout=dropout,
         )
 
         self.hyper = HyperLinear(
