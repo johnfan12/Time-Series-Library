@@ -8,11 +8,19 @@ import torch.nn as nn
 class SimpleTSFeature(nn.Module):
     """Extracts lightweight statistical features from a window."""
 
-    def __init__(self, seq_len: int, in_channels: int, d_feat: int, hidden: Optional[int] = None):
+    def __init__(
+        self,
+        seq_len: int,
+        in_channels: int,
+        d_feat: int,
+        hidden: Optional[int] = None,
+        n_freqs: int = 3,
+    ):
         super().__init__()
         self.seq_len = seq_len
         self.in_channels = in_channels
-        base_dim = in_channels * 5
+        self.n_freqs = max(1, n_freqs)
+        base_dim = in_channels * (5 + 1 + self.n_freqs)
         if hidden is None:
             hidden = max(base_dim, d_feat)
 
@@ -40,7 +48,29 @@ class SimpleTSFeature(nn.Module):
             diff_mean = torch.zeros_like(mean)
             autocorr = torch.zeros_like(mean)
 
-        stats = torch.cat([mean, std, last, diff_mean, autocorr], dim=-1)
+        # Trend estimation via least squares slope per channel
+        time_idx = torch.arange(x.shape[1], device=x.device, dtype=x.dtype)
+        time_idx = time_idx - time_idx.mean()
+        centered = x - mean.unsqueeze(1)
+        slope_num = (centered * time_idx.view(1, -1, 1)).sum(dim=1)
+        slope_den = torch.clamp(time_idx.pow(2).sum(), min=1e-6)
+        slope = slope_num / slope_den
+
+        # Periodic descriptors from FFT magnitudes
+        freq_domain = torch.fft.rfft(centered.permute(0, 2, 1), dim=-1)
+        amp = freq_domain.abs()
+        if amp.shape[-1] > 1:
+            seasonal_amp = amp[..., 1:]
+            topk = min(self.n_freqs, seasonal_amp.shape[-1])
+            seasonal_topk, _ = torch.topk(seasonal_amp, k=topk, dim=-1)
+            if topk < self.n_freqs:
+                pad = torch.zeros(*seasonal_topk.shape[:-1], self.n_freqs - topk, device=x.device, dtype=x.dtype)
+                seasonal_topk = torch.cat([seasonal_topk, pad], dim=-1)
+        else:
+            seasonal_topk = torch.zeros(centered.size(0), self.in_channels, self.n_freqs, device=x.device, dtype=x.dtype)
+        seasonal_flat = seasonal_topk.reshape(x.shape[0], -1)
+
+        stats = torch.cat([mean, std, last, diff_mean, autocorr, slope, seasonal_flat], dim=-1)
         return self.proj(stats)
 
 
@@ -143,10 +173,13 @@ class Model(nn.Module):
         d_feat = d_model
         out_dim = self.pred_len * self.c_out
 
+        feat_freqs = getattr(configs, "feature_n_freqs", 3)
+
         self.feat_extractor = SimpleTSFeature(
             seq_len=self.seq_len,
             in_channels=self.c_in,
             d_feat=d_feat,
+            n_freqs=feat_freqs,
         )
 
         n_heads = getattr(configs, "n_heads", 4)
