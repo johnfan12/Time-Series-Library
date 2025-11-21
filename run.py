@@ -137,6 +137,13 @@ if __name__ == '__main__':
                         help="Discrimitive shapeDTW warp preset augmentation")
     parser.add_argument('--extra_tag', type=str, default="", help="Anything extra")
 
+    # Hyper feature extraction
+    parser.add_argument('--feature_methods', type=str, default='',
+                        help='Comma separated feature extractor names for Hyper models (stats,trend,ar,...)')
+    parser.add_argument('--feature_n_freqs', type=int, default=3, help='Number of dominant seasonal freqs')
+    parser.add_argument('--feature_ar_order', type=int, default=3, help='AR coefficient order')
+    parser.add_argument('--feature_ar_reg', type=float, default=1e-4, help='AR ridge regularizer')
+
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
 
@@ -157,12 +164,18 @@ if __name__ == '__main__':
     parser.add_argument('--pos', type=int, choices=[0, 1], default=1, help='Positional Embedding. Set pos to 0 or 1')
 
     args = parser.parse_args()
+
+    def _split_arg(value: str):
+        return [item.strip() for item in value.split(',') if item.strip()]
+
+    feature_methods = _split_arg(getattr(args, 'feature_methods', ''))
+    args.feature_methods = feature_methods if feature_methods else None
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))
         print('Using GPU')
     else:
-        if hasattr(torch.backends, "mps"):
-            args.device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+        if hasattr(torch.backends, "mps") and hasattr(torch, "mps") and torch.backends.mps.is_available():
+            args.device = torch.device("mps")
         else:
             args.device = torch.device("cpu")
         print('Using cpu or mps')
@@ -219,8 +232,8 @@ if __name__ == '__main__':
 
             print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
             exp.test(setting)
-            if args.gpu_type == 'mps':
-                torch.backends.mps.empty_cache()
+            if args.gpu_type == 'mps' and hasattr(torch, "mps"):
+                torch.mps.empty_cache()
             elif args.gpu_type == 'cuda':
                 torch.cuda.empty_cache()
     else:
@@ -249,7 +262,7 @@ if __name__ == '__main__':
 
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
-        if args.gpu_type == 'mps':
-            torch.backends.mps.empty_cache()
+        if args.gpu_type == 'mps' and hasattr(torch, "mps"):
+            torch.mps.empty_cache()
         elif args.gpu_type == 'cuda':
             torch.cuda.empty_cache()
