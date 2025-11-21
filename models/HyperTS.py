@@ -15,12 +15,16 @@ class SimpleTSFeature(nn.Module):
         d_feat: int,
         hidden: Optional[int] = None,
         n_freqs: int = 3,
+        ar_order: int = 3,
+        ar_regularizer: float = 1e-4,
     ):
         super().__init__()
         self.seq_len = seq_len
         self.in_channels = in_channels
         self.n_freqs = max(1, n_freqs)
-        base_dim = in_channels * (5 + 1 + self.n_freqs)
+        self.ar_order = max(1, ar_order)
+        self.ar_regularizer = ar_regularizer
+        base_dim = in_channels * (5 + 1 + self.n_freqs + self.ar_order)
         if hidden is None:
             hidden = max(base_dim, d_feat)
 
@@ -30,6 +34,32 @@ class SimpleTSFeature(nn.Module):
             nn.Linear(hidden, d_feat),
             nn.ReLU(),
         )
+
+    def _fit_ar_params(self, series: torch.Tensor) -> torch.Tensor:
+        """Fits autoregressive coefficients per batch/channel via least squares."""
+        B, L, C = series.shape
+        order = min(self.ar_order, max(L - 1, 1))
+        if L <= order:
+            return torch.zeros(B, C, self.ar_order, device=series.device, dtype=series.dtype)
+
+        target = series[:, order:, :].permute(0, 2, 1)  # [B, C, L-order]
+        lagged = []
+        for lag in range(1, order + 1):
+            lagged.append(series[:, order - lag:-lag, :])
+        lag_tensor = torch.stack(lagged, dim=-1).permute(0, 3, 1, 2)  # [B, order, L-order, C]
+        lag_tensor = lag_tensor.permute(0, 3, 2, 1)  # [B, C, L-order, order]
+
+        Xt = lag_tensor.transpose(-1, -2)  # [B, C, order, L-order]
+        XtX = torch.matmul(Xt, lag_tensor)
+        eye = torch.eye(order, device=series.device, dtype=series.dtype)
+        XtX = XtX + self.ar_regularizer * eye.view(1, 1, order, order)
+        Xty = torch.matmul(Xt, target.unsqueeze(-1))  # [B, C, order, 1]
+        coeffs = torch.linalg.solve(XtX, Xty).squeeze(-1)
+
+        if order < self.ar_order:
+            pad = torch.zeros(B, C, self.ar_order - order, device=series.device, dtype=series.dtype)
+            coeffs = torch.cat([coeffs, pad], dim=-1)
+        return coeffs
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -70,7 +100,10 @@ class SimpleTSFeature(nn.Module):
             seasonal_topk = torch.zeros(centered.size(0), self.in_channels, self.n_freqs, device=x.device, dtype=x.dtype)
         seasonal_flat = seasonal_topk.reshape(x.shape[0], -1)
 
-        stats = torch.cat([mean, std, last, diff_mean, autocorr, slope, seasonal_flat], dim=-1)
+        ar_coeffs = self._fit_ar_params(centered)
+        ar_flat = ar_coeffs.reshape(x.shape[0], -1)
+
+        stats = torch.cat([mean, std, last, diff_mean, autocorr, slope, seasonal_flat, ar_flat], dim=-1)
         return self.proj(stats)
 
 
@@ -174,12 +207,16 @@ class Model(nn.Module):
         out_dim = self.pred_len * self.c_out
 
         feat_freqs = getattr(configs, "feature_n_freqs", 3)
+        feat_ar_order = getattr(configs, "feature_ar_order", 3)
+        feat_ar_reg = getattr(configs, "feature_ar_reg", 1e-4)
 
         self.feat_extractor = SimpleTSFeature(
             seq_len=self.seq_len,
             in_channels=self.c_in,
             d_feat=d_feat,
             n_freqs=feat_freqs,
+            ar_order=feat_ar_order,
+            ar_regularizer=feat_ar_reg,
         )
 
         n_heads = getattr(configs, "n_heads", 4)
