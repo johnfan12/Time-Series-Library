@@ -93,62 +93,27 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
-        # Check for HyperTS model structure for 2-phase training
-        if self.args.use_multi_gpu and self.args.use_gpu:
-            real_model = self.model.module
-        else:
-            real_model = self.model
-            
-        train_phases = 1
-        if hasattr(real_model, 'backbone') and hasattr(real_model, 'hyper'):
-            train_phases = 2
-            print("Detected HyperTS model. Enabling 2-phase training (Backbone+Hyper -> Hyper only).")
+        for epoch in range(self.args.train_epochs):
+            iter_count = 0
+            train_loss = []
 
-        for phase in range(train_phases):
-            if phase == 1:
-                print(">>>>>>> Start Phase 2: Training HyperNetwork only (Backbone frozen) <<<<<<<<<<")
-                # Load best model from Phase 1
-                best_model_path = path + '/' + 'checkpoint.pth'
-                self.model.load_state_dict(torch.load(best_model_path))
-                
-                # Freeze backbone
-                for param in real_model.backbone.parameters():
-                    param.requires_grad = False
-                
-                # Re-select optimizer for trainable parameters
-                model_optim = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=self.args.learning_rate)
-                # Reset Early Stopping
-                early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+            self.model.train()
+            epoch_time = time.time()
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                iter_count += 1
+                model_optim.zero_grad()
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float().to(self.device)
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
 
-            for epoch in range(self.args.train_epochs):
-                iter_count = 0
-                train_loss = []
+                # decoder input
+                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
 
-                self.model.train()
-                epoch_time = time.time()
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-                    iter_count += 1
-                    model_optim.zero_grad()
-                    batch_x = batch_x.float().to(self.device)
-                    batch_y = batch_y.float().to(self.device)
-                    batch_x_mark = batch_x_mark.float().to(self.device)
-                    batch_y_mark = batch_y_mark.float().to(self.device)
-
-                    # decoder input
-                    dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
-
-                    # encoder - decoder
-                    if self.args.use_amp:
-                        with torch.cuda.amp.autocast():
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
-                            f_dim = -1 if self.args.features == 'MS' else 0
-                            outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                            batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                            loss = criterion(outputs, batch_y)
-                            train_loss.append(loss.item())
-                    else:
+                # encoder - decoder
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
@@ -156,36 +121,44 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
+                else:
+                    outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
-                    if (i + 1) % 100 == 0:
-                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                        speed = (time.time() - time_now) / iter_count
-                        left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                        iter_count = 0
-                        time_now = time.time()
+                    f_dim = -1 if self.args.features == 'MS' else 0
+                    outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                    batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                    loss = criterion(outputs, batch_y)
+                    train_loss.append(loss.item())
 
-                    if self.args.use_amp:
-                        scaler.scale(loss).backward()
-                        scaler.step(model_optim)
-                        scaler.update()
-                    else:
-                        loss.backward()
-                        model_optim.step()
+                if (i + 1) % 100 == 0:
+                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                    speed = (time.time() - time_now) / iter_count
+                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                    iter_count = 0
+                    time_now = time.time()
 
-                print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-                train_loss = np.average(train_loss)
-                vali_loss = self.vali(vali_data, vali_loader, criterion)
-                test_loss = self.vali(test_data, test_loader, criterion)
+                if self.args.use_amp:
+                    scaler.scale(loss).backward()
+                    scaler.step(model_optim)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    model_optim.step()
 
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-                early_stopping(vali_loss, self.model, path)
-                if early_stopping.early_stop:
-                    print("Early stopping")
-                    break
+            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            train_loss = np.average(train_loss)
+            vali_loss = self.vali(vali_data, vali_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
 
-                adjust_learning_rate(model_optim, epoch + 1, self.args)
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            early_stopping(vali_loss, self.model, path)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
+
+            adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
