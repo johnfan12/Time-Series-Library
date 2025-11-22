@@ -114,6 +114,8 @@ class Model(nn.Module):
         feat_freqs = getattr(configs, "feature_n_freqs", 3)
         feat_ar_order = getattr(configs, "feature_ar_order", 3)
         feat_ar_reg = getattr(configs, "feature_ar_reg", 1e-4)
+        feat_arima_max_p = getattr(configs, "feature_arima_max_p", 3)
+        feat_arima_max_d = getattr(configs, "feature_arima_max_d", 2)
         feat_methods = getattr(configs, "feature_methods", None)
 
         self.feat_extractor = SimpleTSFeature(
@@ -124,6 +126,8 @@ class Model(nn.Module):
             n_freqs=feat_freqs,
             ar_order=feat_ar_order,
             ar_regularizer=feat_ar_reg,
+            arima_max_p=feat_arima_max_p,
+            arima_max_d=feat_arima_max_d,
         )
 
         self.backbone = TransformerBackbone(configs)

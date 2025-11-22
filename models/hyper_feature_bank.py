@@ -1,7 +1,7 @@
 """Feature extraction utilities for HyperTS-style models."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -119,10 +119,105 @@ class ARFeature(_BaseFeature):
         return coeffs
 
 
+class ARIMASearchFeature(_BaseFeature):
+    """Searches ARIMA(p,d,0) params (small grid) and exposes best coefficients, d and mse."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        max_p: int = 3,
+        max_d: int = 2,
+        ar_regularizer: float = 1e-4,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.max_p = max(1, max_p)
+        self.max_d = max(0, max_d)
+        self.ar_regularizer = ar_regularizer
+        # per channel: coeffs(max_p) + best_p + best_d + mse
+        self.output_dim = in_channels * (self.max_p + 3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, L, C = x.shape
+        device = x.device
+        dtype = x.dtype
+        features = []
+        for b in range(B):
+            channel_vals = []
+            for c in range(C):
+                seq = x[b, :, c]
+                coeffs, best_p, best_d, best_loss = self._search_channel(seq)
+                best_p_norm = torch.tensor(best_p / float(self.max_p), device=device, dtype=dtype)
+                best_d_norm = torch.tensor(best_d / float(max(1, self.max_d + 1)), device=device, dtype=dtype)
+                mse_tensor = torch.tensor(best_loss, device=device, dtype=dtype)
+                channel_vec = torch.cat([coeffs, best_p_norm.unsqueeze(0), best_d_norm.unsqueeze(0), mse_tensor.unsqueeze(0)])
+                channel_vals.append(channel_vec)
+            features.append(torch.cat(channel_vals, dim=-1))
+        return torch.stack(features, dim=0)
+
+    def _search_channel(self, seq: torch.Tensor) -> Tuple[torch.Tensor, int, int, float]:
+        device = seq.device
+        dtype = seq.dtype
+        best_loss = float('inf')
+        best_coeffs = torch.zeros(self.max_p, device=device, dtype=dtype)
+        best_p = 0
+        best_d = 0
+        for d in range(self.max_d + 1):
+            diff_seq = self._difference(seq, d)
+            if diff_seq.shape[0] <= 1:
+                continue
+            for p in range(1, self.max_p + 1):
+                coeffs, loss = self._fit_ar(diff_seq, p)
+                if coeffs is None:
+                    continue
+                if loss < best_loss:
+                    pad = torch.zeros(self.max_p, device=device, dtype=dtype)
+                    pad[:p] = coeffs
+                    best_coeffs = pad
+                    best_loss = loss
+                    best_p = p
+                    best_d = d
+        if best_loss == float('inf'):
+            best_loss = 0.0
+        return best_coeffs, best_p, best_d, best_loss
+
+    @staticmethod
+    def _difference(seq: torch.Tensor, d: int) -> torch.Tensor:
+        result = seq
+        for _ in range(d):
+            if result.shape[0] <= 1:
+                return result
+            result = result[1:] - result[:-1]
+        return result
+
+    def _fit_ar(self, seq: torch.Tensor, order: int) -> Tuple[Optional[torch.Tensor], float]:
+        if seq.shape[0] <= order:
+            return None, float('inf')
+        windows = seq.unfold(0, order, 1)
+        if windows.shape[0] <= 1:
+            return None, float('inf')
+        X = windows[:-1]
+        y = seq[order:]
+        if X.shape[0] == 0 or y.shape[0] == 0:
+            return None, float('inf')
+        XtX = X.T @ X
+        eye = torch.eye(order, device=seq.device, dtype=seq.dtype)
+        XtX = XtX + self.ar_regularizer * eye
+        Xty = X.T @ y
+        try:
+            coeffs = torch.linalg.solve(XtX, Xty)
+        except RuntimeError:
+            return None, float('inf')
+        preds = X @ coeffs
+        loss = torch.mean((preds - y) ** 2).item()
+        return coeffs, loss
+
+
 FEATURE_BUILDERS = {
     'stats': StatsFeature,
     'trend': TrendSeasonFeature,
     'ar': ARFeature,
+    'arima': ARIMASearchFeature,
 }
 
 
@@ -139,6 +234,8 @@ class SimpleTSFeature(nn.Module):
         n_freqs: int = 3,
         ar_order: int = 3,
         ar_regularizer: float = 1e-4,
+        arima_max_p: int = 3,
+        arima_max_d: int = 2,
     ) -> None:
         super().__init__()
         if method_names is None or len(method_names) == 0:
@@ -148,6 +245,7 @@ class SimpleTSFeature(nn.Module):
             'stats': {},
             'trend': {'seq_len': seq_len, 'n_freqs': n_freqs},
             'ar': {'ar_order': ar_order, 'ar_regularizer': ar_regularizer},
+            'arima': {'max_p': arima_max_p, 'max_d': arima_max_d, 'ar_regularizer': ar_regularizer},
         }
 
         self.blocks = nn.ModuleList()

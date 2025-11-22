@@ -143,6 +143,8 @@ if __name__ == '__main__':
     parser.add_argument('--feature_n_freqs', type=int, default=3, help='Number of dominant seasonal freqs')
     parser.add_argument('--feature_ar_order', type=int, default=3, help='AR coefficient order')
     parser.add_argument('--feature_ar_reg', type=float, default=1e-4, help='AR ridge regularizer')
+    parser.add_argument('--feature_arima_max_p', type=int, default=3, help='Max AR order for ARIMA search feature')
+    parser.add_argument('--feature_arima_max_d', type=int, default=2, help='Max differencing order for ARIMA search')
 
     # TimeXer
     parser.add_argument('--patch_len', type=int, default=16, help='patch length')
