@@ -107,6 +107,23 @@ bash ./scripts/classification/TimesNet.sh
 - Include the newly added model in the `Exp_Basic.model_dict` of  `./exp/exp_basic.py`.
 - Create the corresponding scripts under the folder `./scripts`.
 
+### PatchTST + iTransformer + DLinear Ensemble
+
+You can ensemble the PatchTST, iTransformer, and DLinear backbones by setting `--model EnsemblePTI` when launching `run.py`. The ensemble exposes the following arguments:
+
+- `--ensemble_models`: order of base models to instantiate (default: PatchTST, iTransformer, DLinear).
+- `--ensemble_method`: aggregation rule, choose from `mean`, `median`, `trimmed_mean`, or `weighted`.
+- `--ensemble_weights`: optional weights (length must equal `ensemble_models`) used when `ensemble_method=weighted`.
+- `--ensemble_trim_ratio`: trimming ratio (0-0.5) for `trimmed_mean` aggregation.
+
+Example command for a median ensemble on ETTh1:
+
+```
+python -u run.py --task_name long_term_forecast --is_training 1 --model EnsemblePTI \
+  --model_id EnPTI_ETTh1 --data ETTh1 --root_path ./data/ETT/ --data_path ETTh1.csv \
+  --features M --seq_len 96 --label_len 48 --pred_len 96 --ensemble_method median
+```
+
 Note: 
 
 (1) About classification: Since we include all five tasks in a unified code base, the accuracy of each subtask may fluctuate but the average performance can be reproduced (even a bit better). We have provided the reproduced checkpoints [here](https://github.com/thuml/Time-Series-Library/issues/494).

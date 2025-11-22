@@ -84,6 +84,15 @@ if __name__ == '__main__':
                         help='down sampling method, only support avg, max, conv')
     parser.add_argument('--seg_len', type=int, default=96,
                         help='the length of segmen-wise iteration of SegRNN')
+    parser.add_argument('--ensemble_models', type=str, nargs='+', default=['PatchTST', 'iTransformer', 'DLinear'],
+                        help='base models used when running EnsemblePTI')
+    parser.add_argument('--ensemble_method', type=str, default='mean',
+                        choices=['mean', 'median', 'trimmed_mean', 'weighted'],
+                        help='aggregation method for EnsemblePTI outputs')
+    parser.add_argument('--ensemble_weights', type=float, nargs='+', default=None,
+                        help='optional weights for weighted ensemble; length must equal ensemble_models')
+    parser.add_argument('--ensemble_trim_ratio', type=float, default=0.0,
+                        help='trim ratio (0-0.5) used when ensemble_method=trimmed_mean')
 
     # optimization
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
