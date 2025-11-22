@@ -1,62 +1,67 @@
-import math
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 
+from layers.Embed import DataEmbedding
+from layers.SelfAttention_Family import FullAttention, AttentionLayer
+from layers.Transformer_EncDec import Encoder, EncoderLayer
+
 from .hyper_feature_bank import SimpleTSFeature
 
 
-class PositionalEncoding(nn.Module):
-    """Standard sine-cosine positional encoding."""
-
-    def __init__(self, d_model: int, max_len: int = 5000):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self._pos_table: torch.Tensor
-        self.register_buffer('_pos_table', pe.unsqueeze(0))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._pos_table[:, :x.size(1), :]
-
-
 class TransformerBackbone(nn.Module):
-    """Transformer encoder backbone shared across all windows."""
+    """Matches the Transformer encoder stack used by the vanilla Transformer model."""
 
-    def __init__(
-        self,
-        seq_len: int,
-        in_channels: int,
-        d_model: int,
-        n_heads: int,
-        n_layers: int,
-        d_ff: int,
-        dropout: float,
-    ):
+    def __init__(self, configs):
         super().__init__()
-        self.input_proj = nn.Linear(in_channels, d_model)
-        self.positional_encoding = PositionalEncoding(d_model, max_len=seq_len)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=n_heads,
-            dim_feedforward=d_ff,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-        self.norm = nn.LayerNorm(d_model)
+        d_model = configs.d_model
+        dropout = getattr(configs, "dropout", 0.1)
+        embed_type = getattr(configs, "embed", "fixed")
+        freq = getattr(configs, "freq", "h")
+        factor = getattr(configs, "factor", 5)
+        activation = getattr(configs, "activation", "gelu")
+        n_heads = getattr(configs, "n_heads", 4)
+        d_ff = getattr(configs, "d_ff", d_model * 4)
+        e_layers = getattr(configs, "e_layers", 2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, L, C]
-        h = self.input_proj(x)
-        h = h + self.positional_encoding(h)
-        h = self.encoder(h)
-        h = self.norm(h)
-        return h.mean(dim=1)
+        self.enc_embedding = DataEmbedding(
+            configs.enc_in,
+            d_model,
+            embed_type=embed_type,
+            freq=freq,
+            dropout=dropout,
+        )
+
+        encoder_layers = [
+            EncoderLayer(
+                AttentionLayer(
+                    FullAttention(
+                        False,
+                        factor,
+                        attention_dropout=dropout,
+                        output_attention=False,
+                    ),
+                    d_model,
+                    n_heads,
+                ),
+                d_model,
+                d_ff,
+                dropout=dropout,
+                activation=activation,
+            )
+            for _ in range(e_layers)
+        ]
+
+        self.encoder = Encoder(
+            encoder_layers,
+            norm_layer=nn.LayerNorm(d_model),
+        )
+
+    def forward(self, x_enc: torch.Tensor, x_mark_enc: Optional[torch.Tensor]) -> torch.Tensor:
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, _ = self.encoder(enc_out, attn_mask=None)
+        return enc_out
 
 
 class HyperLinear(nn.Module):
@@ -121,20 +126,7 @@ class Model(nn.Module):
             ar_regularizer=feat_ar_reg,
         )
 
-        n_heads = getattr(configs, "n_heads", 4)
-        n_layers = getattr(configs, "e_layers", 2)
-        d_ff = getattr(configs, "d_ff", d_model * 4)
-        dropout = getattr(configs, "dropout", 0.1)
-
-        self.backbone = TransformerBackbone(
-            seq_len=self.seq_len,
-            in_channels=self.c_in,
-            d_model=d_model,
-            n_heads=n_heads,
-            n_layers=n_layers,
-            d_ff=d_ff,
-            dropout=dropout,
-        )
+        self.backbone = TransformerBackbone(configs)
 
         self.hyper = HyperLinear(
             d_feat=d_feat,
@@ -144,7 +136,8 @@ class Model(nn.Module):
 
     def forecast(self, x_enc: torch.Tensor, x_mark_enc=None, x_dec=None, x_mark_dec=None) -> torch.Tensor:
         feat = self.feat_extractor(x_enc)
-        h = self.backbone(x_enc)
+        h_seq = self.backbone(x_enc, x_mark_enc)
+        h = h_seq.mean(dim=1)
         W, b = self.hyper(feat)
 
         h_vec = h.unsqueeze(-1)
