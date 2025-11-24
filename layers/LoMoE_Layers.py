@@ -83,7 +83,10 @@ class LoMoEOutputHead(nn.Module):
         return pooled
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Base path
+        batch_size = x.shape[0]
+        n_vars = x.shape[1]
+        device = x.device
+
         flattened = self.base_head.flatten(x)
         base_out = self.base_head.linear(flattened)
         base_out = self.base_head.dropout(base_out)
@@ -92,13 +95,12 @@ class LoMoEOutputHead(nn.Module):
         router_inputs = self._pool_router_features(x)
         routing_weights, selected_indices, router_probs = self.router(router_inputs)
 
-        batch_size = flattened.shape[0]
-        flat_2d = flattened.view(batch_size * self.n_vars, -1)
-        expert_outputs = [expert(flat_2d).view(batch_size, self.n_vars, -1) for expert in self.experts]
+        flat_2d = flattened.reshape(batch_size * n_vars, -1)
+        expert_outputs = [expert(flat_2d).view(batch_size, n_vars, -1) for expert in self.experts]
 
         moe_delta = torch.zeros_like(base_out)
         for b in range(batch_size):
-            sample_delta = torch.zeros_like(base_out[b])
+            sample_delta = torch.zeros_like(base_out[b], device=device)
             for pos, expert_idx in enumerate(selected_indices[b]):
                 weight = routing_weights[b, pos]
                 idx = int(expert_idx.item())
@@ -139,7 +141,7 @@ class LoMoELinearHead(nn.Module):
         moe_delta = torch.zeros_like(base_out)
         batch_size = x.shape[0]
         for b in range(batch_size):
-            sample_delta = torch.zeros_like(base_out[b])
+            sample_delta = torch.zeros_like(base_out[b], device=x.device)
             for pos, expert_idx in enumerate(selected_indices[b]):
                 idx = int(expert_idx.item())
                 weight = routing_weights[b, pos]
