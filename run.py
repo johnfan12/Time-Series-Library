@@ -156,6 +156,13 @@ if __name__ == '__main__':
     parser.add_argument('--top_p', type=float, default=0.5, help='Dynamic Routing in MoE')
     parser.add_argument('--pos', type=int, choices=[0, 1], default=1, help='Positional Embedding. Set pos to 0 or 1')
 
+    # LoMoE / LoRA configs
+    parser.add_argument('--num_experts', type=int, default=4, help='number of experts in LoMoE head')
+    parser.add_argument('--lora_rank', type=int, default=8, help='rank for LoRA experts')
+    parser.add_argument('--moe_topk', type=int, default=2, help='top-k experts to activate per sample')
+    parser.add_argument('--moe_aux_loss_coeff', type=float, default=0.0,
+                        help='coefficient for router load balancing loss')
+
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))

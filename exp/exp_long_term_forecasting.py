@@ -19,6 +19,22 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Long_Term_Forecast, self).__init__(args)
 
+    def _unpack_model_output(self, model_output):
+        if isinstance(model_output, (list, tuple)):
+            pred = model_output[0]
+            aux = model_output[1] if len(model_output) > 1 else None
+            return pred, aux
+        return model_output, None
+
+    def _compute_moe_aux_loss(self, router_probs):
+        coeff = getattr(self.args, 'moe_aux_loss_coeff', 0.0)
+        if coeff <= 0 or router_probs is None:
+            return None
+        expert_mean = router_probs.mean(dim=0)
+        uniform = torch.full_like(expert_mean, 1.0 / expert_mean.numel())
+        aux_loss = (expert_mean - uniform).pow(2).sum() * expert_mean.numel()
+        return coeff * aux_loss
+
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
 
@@ -59,6 +75,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                outputs, _ = self._unpack_model_output(outputs)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
@@ -115,19 +132,23 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
+                        outputs, router_probs = self._unpack_model_output(outputs)
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                        loss = criterion(outputs, batch_y)
+                        task_loss = criterion(outputs, batch_y)
+                        aux_loss = self._compute_moe_aux_loss(router_probs)
+                        loss = task_loss + (aux_loss if aux_loss is not None else 0)
                         train_loss.append(loss.item())
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
+                    outputs, router_probs = self._unpack_model_output(outputs)
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-                    loss = criterion(outputs, batch_y)
+                    task_loss = criterion(outputs, batch_y)
+                    aux_loss = self._compute_moe_aux_loss(router_probs)
+                    loss = task_loss + (aux_loss if aux_loss is not None else 0)
                     train_loss.append(loss.item())
 
                 if (i + 1) % 100 == 0:
@@ -195,6 +216,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                outputs, _ = self._unpack_model_output(outputs)
 
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, :]
