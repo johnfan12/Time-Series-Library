@@ -107,3 +107,44 @@ class LoMoEOutputHead(nn.Module):
 
         final_out = base_out + moe_delta
         return final_out, router_probs
+
+
+class LoMoELinearHead(nn.Module):
+    """LoMoE wrapper for simple Linear heads operating per time step."""
+
+    def __init__(
+        self,
+        base_linear: nn.Linear,
+        d_model: int,
+        num_experts: int = 4,
+        rank: int = 8,
+        top_k: int = 2,
+    ) -> None:
+        super().__init__()
+        self.base_linear = base_linear
+        self.router = TopKRouter(d_model, num_experts, top_k=top_k)
+        self.experts = nn.ModuleList([
+            LoRALayer(d_model, base_linear.out_features, rank=rank) for _ in range(num_experts)
+        ])
+
+    def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=1)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        base_out = self.base_linear(x)
+        router_inputs = self._pool_router_features(x)
+        routing_weights, selected_indices, router_probs = self.router(router_inputs)
+
+        expert_outputs = [expert(x) for expert in self.experts]
+        moe_delta = torch.zeros_like(base_out)
+        batch_size = x.shape[0]
+        for b in range(batch_size):
+            sample_delta = torch.zeros_like(base_out[b])
+            for pos, expert_idx in enumerate(selected_indices[b]):
+                idx = int(expert_idx.item())
+                weight = routing_weights[b, pos]
+                sample_delta = sample_delta + weight * expert_outputs[idx][b]
+            moe_delta[b] = sample_delta
+
+        final_out = base_out + moe_delta
+        return final_out, router_probs
