@@ -39,6 +39,7 @@ def _get_dataset_args(cli_args: argparse.Namespace) -> argparse.Namespace:
         freq=cli_args.freq,
         batch_size=cli_args.batch_size,
         num_workers=cli_args.num_workers,
+        augmentation_ratio=cli_args.augmentation_ratio,
     )
 
 
@@ -65,6 +66,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--embed', type=str, default='timeF')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--augmentation_ratio', type=float, default=0.0)
 
     parser.add_argument('--feature_max_acf', type=int, default=6)
     parser.add_argument('--feature_topk_fft', type=int, default=3)
