@@ -102,6 +102,11 @@ class LoMoEOutputHead(nn.Module):
                 continue
             expert.load_state_dict(src_state)
 
+    def lora_parameters(self):
+        for expert in self.experts:
+            for param in expert.parameters():
+                yield param
+
     def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
         pooled = x.mean(dim=1)  # [B, d_model, patch_num]
         pooled = pooled.mean(dim=-1)  # [B, d_model]
@@ -194,6 +199,11 @@ class LoMoELinearHead(nn.Module):
             if idx == src_idx:
                 continue
             expert.load_state_dict(src_state)
+
+    def lora_parameters(self):
+        for expert in self.experts:
+            for param in expert.parameters():
+                yield param
 
     def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
         return x.mean(dim=1)

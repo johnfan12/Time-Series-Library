@@ -19,6 +19,7 @@ class Model(PatchTSTBase):
         self._router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None
         self._lomoe_active = self.task_name in {'long_term_forecast', 'short_term_forecast'}
         self._cluster_router_enabled = True
+        self._backbone_frozen = False
         self.cluster_router: Optional[StatsClusterRouter] = None
         if self._lomoe_active:
             if not isinstance(self.head, FlattenHead):
@@ -128,3 +129,26 @@ class Model(PatchTSTBase):
     def replicate_primary_expert(self, src_idx: int = 0) -> None:
         if isinstance(self.head, LoMoEOutputHead):
             self.head.replicate_expert(src_idx)
+
+    def _iter_lora_parameters(self):
+        if isinstance(self.head, LoMoEOutputHead):
+            yield from self.head.lora_parameters()
+
+    def freeze_backbone_for_lora(self) -> None:
+        if self._backbone_frozen:
+            return
+        lora_params = list(self._iter_lora_parameters())
+        if not lora_params:
+            raise RuntimeError("LoMoE head not found; cannot freeze backbone for LoRA-only training.")
+        for param in self.parameters():
+            param.requires_grad = False
+        for param in lora_params:
+            param.requires_grad = True
+        self._backbone_frozen = True
+
+    def unfreeze_backbone(self) -> None:
+        if not self._backbone_frozen:
+            return
+        for param in self.parameters():
+            param.requires_grad = True
+        self._backbone_frozen = False

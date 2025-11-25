@@ -121,6 +121,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             hasattr(base_model, attr)
             for attr in ['set_single_expert_mode', 'replicate_primary_expert', 'set_cluster_router_enabled']
         )
+        supports_lora_freeze = hasattr(base_model, 'freeze_backbone_for_lora')
+        freeze_backbone_after_warmup = bool(getattr(self.args, 'lomoe_freeze_backbone_after_warmup', False))
         warmup_active = supports_lomoe_control and warmup_epochs > 0
         if warmup_active:
             base_model.set_single_expert_mode(0)
@@ -128,6 +130,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             print(f"[LoMoE] Warmup enabled for {warmup_epochs} epoch(s): training with expert 0 only.")
         elif warmup_epochs > 0:
             print("[LoMoE] Warmup requested but model does not expose LoMoE controls; skipping warmup phase.")
+        if freeze_backbone_after_warmup and not supports_lora_freeze:
+            print("[LoMoE] Backbone-freeze requested but model lacks freeze controls; keeping all params trainable.")
+        if freeze_backbone_after_warmup and warmup_epochs == 0:
+            print("[LoMoE] Backbone-freeze flag is set but warmup duration is 0; skipping freeze.")
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -197,6 +203,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 base_model.replicate_primary_expert(0)
                 base_model.set_single_expert_mode(None)
                 base_model.set_cluster_router_enabled(True)
+                if freeze_backbone_after_warmup and supports_lora_freeze:
+                    base_model.freeze_backbone_for_lora()
+                    print("[LoMoE] Backbone frozen: continuing training with LoRA experts only.")
                 warmup_active = False
                 print("[LoMoE] Warmup finished: replicated expert 0 weights to all experts and re-enabled router.")
 

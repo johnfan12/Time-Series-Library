@@ -164,6 +164,8 @@ if __name__ == '__main__':
                         help='coefficient for router load balancing loss')
     parser.add_argument('--lomoe_warmup_epochs', type=int, default=0,
                         help='train with a single expert for N epochs before enabling routing')
+    parser.add_argument('--lomoe_freeze_backbone_after_warmup', action='store_true', default=False,
+                        help='after warmup, freeze backbone weights and train LoRA experts only')
     parser.add_argument('--cluster_artifact_dir', type=str, default=None,
                         help='directory containing reducer.joblib / cluster.joblib for stats router')
     parser.add_argument('--cluster_feat_max_acf', type=int, default=6,
