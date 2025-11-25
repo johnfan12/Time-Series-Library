@@ -7,10 +7,15 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import List
+import sys
 
 import numpy as np
 import torch
 from tqdm import tqdm
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
 
 from data_provider.data_factory import data_provider
 from utils.ts_stats import FeatureExtractionConfig, batch_extract_ts_features
