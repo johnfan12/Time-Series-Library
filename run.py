@@ -162,6 +162,20 @@ if __name__ == '__main__':
     parser.add_argument('--moe_topk', type=int, default=2, help='top-k experts to activate per sample')
     parser.add_argument('--moe_aux_loss_coeff', type=float, default=0.0,
                         help='coefficient for router load balancing loss')
+    parser.add_argument('--cluster_artifact_dir', type=str, default=None,
+                        help='directory containing reducer.joblib / cluster.joblib for stats router')
+    parser.add_argument('--cluster_feat_max_acf', type=int, default=6,
+                        help='max acf lags for stats feature extraction')
+    parser.add_argument('--cluster_feat_topk_fft', type=int, default=3,
+                        help='number of fft peaks for stats feature extraction')
+    parser.add_argument('--cluster_feat_poly_order', type=int, default=1,
+                        help='polynomial order for trend features')
+    parser.add_argument('--cluster_feat_clip', type=float, default=None,
+                        help='clip value applied to stats features before reduction')
+    parser.add_argument('--cluster_router_temperature', type=float, default=1.0,
+                        help='temperature scaling for stats-based router softmax')
+    parser.add_argument('--cluster_router_metric', type=str, default='euclidean',
+                        choices=['euclidean', 'cosine'], help='distance metric for stats router')
 
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
