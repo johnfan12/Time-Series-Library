@@ -108,6 +108,7 @@ def extract_ts_features(series: np.ndarray, cfg: Optional[FeatureExtractionConfi
             ),
             acf,
         ])
+        feature_vec = np.nan_to_num(feature_vec, nan=0.0, posinf=cfg.clip_value or 0.0, neginf=-(cfg.clip_value or 0.0))
         per_var_features.append(feature_vec)
 
     stacked = np.stack(per_var_features, axis=0)
@@ -115,6 +116,7 @@ def extract_ts_features(series: np.ndarray, cfg: Optional[FeatureExtractionConfi
         stacked.mean(axis=0),
         stacked.std(axis=0),
     ])
+    summary = np.nan_to_num(summary, nan=0.0, posinf=cfg.clip_value or 0.0, neginf=-(cfg.clip_value or 0.0))
     return summary.astype(np.float32)
 
 
