@@ -19,7 +19,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from data_provider.data_factory import data_provider
 from utils.ts_stats import FeatureExtractionConfig, batch_extract_ts_features
-from utils.ts_dim_reduction import ReducerConfig, TSFeatureReducer
 from utils.ts_clustering import ClusterConfig, TSClusterer
 
 
@@ -73,7 +72,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--feature_poly_order', type=int, default=1)
     parser.add_argument('--feature_clip', type=float, default=5.0)
 
-    parser.add_argument('--reducer_components', type=int, default=16)
     parser.add_argument('--cluster_num', type=int, default=4)
     parser.add_argument('--save_dir', type=str, default='./cluster_artifacts/ETTh1')
 
@@ -100,16 +98,11 @@ def main():
     all_features = batch_extract_ts_features(list(series), feat_cfg)
     print(f"Extracted features of shape: {all_features.shape}")
 
-    reducer = TSFeatureReducer(ReducerConfig(n_components=args.reducer_components))
-    reduced = reducer.fit_transform(all_features)
-    print(f"Reduced embeddings shape: {reduced.shape}")
-
     clusterer = TSClusterer(ClusterConfig(n_clusters=args.cluster_num))
-    clusterer.fit(reduced)
+    clusterer.fit(all_features)
 
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    reducer.save(save_dir / 'reducer.joblib')
     clusterer.save(save_dir / 'cluster.joblib')
 
     with open(save_dir / 'feature_cfg.json', 'w', encoding='utf-8') as f:

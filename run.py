@@ -169,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--lomoe_phase2_lr_scale', type=float, default=1.0,
                         help='multiply learning rate by this factor once the router phase starts')
     parser.add_argument('--cluster_artifact_dir', type=str, default=None,
-                        help='directory containing reducer.joblib / cluster.joblib for stats router')
+                        help='directory containing cluster.joblib (and optional reducer.joblib) for stats router')
     parser.add_argument('--cluster_feat_max_acf', type=int, default=6,
                         help='max acf lags for stats feature extraction')
     parser.add_argument('--cluster_feat_topk_fft', type=int, default=3,

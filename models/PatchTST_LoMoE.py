@@ -36,13 +36,13 @@ class Model(PatchTSTBase):
             )
             cluster_dir = getattr(configs, 'cluster_artifact_dir', None)
             if cluster_dir:
-                reducer_path = Path(cluster_dir) / 'reducer.joblib'
                 cluster_path = Path(cluster_dir) / 'cluster.joblib'
-                if not reducer_path.exists() or not cluster_path.exists():
+                if not cluster_path.exists():
                     raise FileNotFoundError(
-                        f"Cluster artifacts not found under {cluster_dir}: "
-                        f"expected reducer.joblib and cluster.joblib"
+                        f"Cluster artifacts not found under {cluster_dir}: expected cluster.joblib"
                     )
+                reducer_path = Path(cluster_dir) / 'reducer.joblib'
+                reducer_source = reducer_path if reducer_path.exists() else None
                 feature_cfg_path = Path(cluster_dir) / 'feature_cfg.json'
                 if feature_cfg_path.exists():
                     with open(feature_cfg_path, 'r', encoding='utf-8') as f:
@@ -56,9 +56,9 @@ class Model(PatchTSTBase):
                         clip_value=getattr(configs, 'cluster_feat_clip', None),
                     )
                 artifacts = ClusterRouterArtifacts(
-                    reducer_path=reducer_path,
                     cluster_path=cluster_path,
                     feature_cfg=feature_cfg,
+                    reducer_path=reducer_source,
                 )
                 device = torch.device(getattr(configs, 'device', 'cpu')) if hasattr(configs, 'device') else None
                 self.cluster_router = StatsClusterRouter(

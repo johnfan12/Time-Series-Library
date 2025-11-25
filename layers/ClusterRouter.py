@@ -9,16 +9,15 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
-from utils.ts_dim_reduction import TSFeatureReducer
 from utils.ts_stats import FeatureExtractionConfig, batch_extract_ts_features
 from utils.ts_clustering import TSClusterer
 
 
 @dataclass
 class ClusterRouterArtifacts:
-    reducer_path: Path
     cluster_path: Path
     feature_cfg: FeatureExtractionConfig
+    reducer_path: Optional[Path] = None
 
 
 class ClusterDistanceRouter(nn.Module):
@@ -77,7 +76,6 @@ class StatsClusterRouter:
         metric: str = "euclidean",
         device: Optional[torch.device] = None,
     ) -> None:
-        reducer = TSFeatureReducer.load(artifacts.reducer_path)
         clusterer = TSClusterer.load(artifacts.cluster_path)
         centroids = torch.from_numpy(clusterer.centroids)
         self.cluster_router = ClusterDistanceRouter(
@@ -86,7 +84,11 @@ class StatsClusterRouter:
             temperature=temperature,
             metric=metric,
         )
-        self.reducer = reducer
+        self.reducer = None
+        if artifacts.reducer_path is not None and artifacts.reducer_path.exists():
+            from utils.ts_dim_reduction import TSFeatureReducer  # local import to avoid unused dependency
+
+            self.reducer = TSFeatureReducer.load(artifacts.reducer_path)
         self.feature_cfg = artifacts.feature_cfg
         self.device = device or torch.device("cpu")
         self.cluster_router.to(self.device)
@@ -94,8 +96,9 @@ class StatsClusterRouter:
     def _series_to_embeddings(self, series: torch.Tensor) -> torch.Tensor:
         batch_np = series.detach().cpu().numpy()
         feats = batch_extract_ts_features(list(batch_np), self.feature_cfg)
-        reduced = self.reducer.transform(feats)
-        return torch.from_numpy(reduced).to(self.device, dtype=torch.float32)
+        if self.reducer is not None:
+            feats = self.reducer.transform(feats)
+        return torch.from_numpy(feats).to(self.device, dtype=torch.float32)
 
     def route(self, series: torch.Tensor):
         embeds = self._series_to_embeddings(series)
