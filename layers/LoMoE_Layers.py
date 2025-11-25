@@ -214,6 +214,7 @@ class LoMoELinearHead(nn.Module):
         router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         base_out = self.base_linear(x)
+        batch_size = x.shape[0]
         if router_override is None:
             forced_idx = self._forced_expert_idx
             if forced_idx is not None:
@@ -231,7 +232,6 @@ class LoMoELinearHead(nn.Module):
 
         expert_outputs = [expert(x) for expert in self.experts]
         moe_delta = torch.zeros_like(base_out)
-        batch_size = x.shape[0]
         for b in range(batch_size):
             sample_delta = torch.zeros_like(base_out[b], device=x.device)
             for pos, expert_idx in enumerate(selected_indices[b]):

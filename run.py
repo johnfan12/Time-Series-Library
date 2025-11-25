@@ -166,6 +166,8 @@ if __name__ == '__main__':
                         help='train with a single expert for N epochs before enabling routing')
     parser.add_argument('--lomoe_freeze_backbone_after_warmup', action='store_true', default=False,
                         help='after warmup, freeze backbone weights and train LoRA experts only')
+    parser.add_argument('--lomoe_phase2_lr_scale', type=float, default=1.0,
+                        help='multiply learning rate by this factor once the router phase starts')
     parser.add_argument('--cluster_artifact_dir', type=str, default=None,
                         help='directory containing reducer.joblib / cluster.joblib for stats router')
     parser.add_argument('--cluster_feat_max_acf', type=int, default=6,

@@ -124,6 +124,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         supports_lora_freeze = hasattr(base_model, 'freeze_backbone_for_lora')
         freeze_backbone_after_warmup = bool(getattr(self.args, 'lomoe_freeze_backbone_after_warmup', False))
         warmup_active = supports_lomoe_control and warmup_epochs > 0
+        phase2_lr_scale = float(getattr(self.args, 'lomoe_phase2_lr_scale', 1.0))
+        if phase2_lr_scale <= 0:
+            raise ValueError('lomoe_phase2_lr_scale must be positive')
+        phase2_lr_pending = warmup_epochs > 0 and abs(phase2_lr_scale - 1.0) > 1e-9
+        phase2_lr_applied = False
+
         if warmup_active:
             base_model.set_single_expert_mode(0)
             base_model.set_cluster_router_enabled(False)
@@ -206,6 +212,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 if freeze_backbone_after_warmup and supports_lora_freeze:
                     base_model.freeze_backbone_for_lora()
                     print("[LoMoE] Backbone frozen: continuing training with LoRA experts only.")
+                if phase2_lr_pending and not phase2_lr_applied:
+                    current_lr = model_optim.param_groups[0]['lr']
+                    new_lr = current_lr * phase2_lr_scale
+                    for param_group in model_optim.param_groups:
+                        param_group['lr'] = new_lr
+                    self.args.learning_rate = new_lr
+                    phase2_lr_applied = True
+                    print(f"[LoMoE] Phase 2 LR scaling applied: {current_lr:.6e} -> {new_lr:.6e}.")
                 warmup_active = False
                 print("[LoMoE] Warmup finished: replicated expert 0 weights to all experts and re-enabled router.")
 
