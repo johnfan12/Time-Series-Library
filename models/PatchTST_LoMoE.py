@@ -18,6 +18,7 @@ class Model(PatchTSTBase):
         self._router_probs = None
         self._router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None
         self._lomoe_active = self.task_name in {'long_term_forecast', 'short_term_forecast'}
+        self._cluster_router_enabled = True
         self.cluster_router: Optional[StatsClusterRouter] = None
         if self._lomoe_active:
             if not isinstance(self.head, FlattenHead):
@@ -82,7 +83,11 @@ class Model(PatchTSTBase):
 
         if self._lomoe_active:
             router_override = None
-            if self.cluster_router is not None and stats_source is not None:
+            if (
+                self.cluster_router is not None
+                and stats_source is not None
+                and self._cluster_router_enabled
+            ):
                 router_override = self.cluster_router.route(stats_source)
             head_out, router_probs = self.head(enc_out, router_override=router_override)
             self._router_probs = router_probs
@@ -111,3 +116,15 @@ class Model(PatchTSTBase):
 
     def get_router_override(self):
         return self._router_override
+
+    # ---- LoMoE training utilities ----
+    def set_cluster_router_enabled(self, enabled: bool) -> None:
+        self._cluster_router_enabled = bool(enabled)
+
+    def set_single_expert_mode(self, expert_idx: Optional[int]) -> None:
+        if isinstance(self.head, LoMoEOutputHead):
+            self.head.set_single_expert_mode(expert_idx)
+
+    def replicate_primary_expert(self, src_idx: int = 0) -> None:
+        if isinstance(self.head, LoMoEOutputHead):
+            self.head.replicate_expert(src_idx)

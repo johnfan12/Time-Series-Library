@@ -106,6 +106,7 @@ bash ./scripts/classification/TimesNet.sh
 - Generate router statistics with `python scripts/cluster_prep/prepare_clusters.py --data ETTh1 --save_dir ./cluster_artifacts/ETTh1` (adjust dataset-specific arguments as needed).
 - Run PatchTST-LoMoE (or other LoMoE-enabled models) by pointing to the saved directory: `python run.py --task_name long_term_forecast --is_training 1 --model PatchTST_LoMoE --cluster_artifact_dir ./cluster_artifacts/ETTh1 ...`.
 - Optional CLI flags `--cluster_feat_max_acf`, `--cluster_feat_topk_fft`, `--cluster_feat_poly_order`, `--cluster_feat_clip`, `--cluster_router_temperature`, and `--cluster_router_metric` let you reproduce the exact preprocessing used when the artifacts were created.
+- Two-phase training is supported via `--lomoe_warmup_epochs N`. During the warmup epochs the model trains with LoRA expert 0 only (router disabled). After warmup, expert 0 is cloned across all experts and the stats-driven router is re-enabled for fine-tuning.
 
 4. Develop your own model.
 

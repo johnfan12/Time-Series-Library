@@ -35,6 +35,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         aux_loss = (expert_mean - uniform).pow(2).sum() * expert_mean.numel()
         return coeff * aux_loss
 
+    def _get_base_model(self):
+        if isinstance(self.model, nn.DataParallel):
+            return self.model.module
+        return self.model
+
     def _build_model(self):
         model = self.model_dict[self.args.model].Model(self.args).float()
 
@@ -110,6 +115,20 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
+        base_model = self._get_base_model()
+        warmup_epochs = max(0, getattr(self.args, 'lomoe_warmup_epochs', 0))
+        supports_lomoe_control = all(
+            hasattr(base_model, attr)
+            for attr in ['set_single_expert_mode', 'replicate_primary_expert', 'set_cluster_router_enabled']
+        )
+        warmup_active = supports_lomoe_control and warmup_epochs > 0
+        if warmup_active:
+            base_model.set_single_expert_mode(0)
+            base_model.set_cluster_router_enabled(False)
+            print(f"[LoMoE] Warmup enabled for {warmup_epochs} epoch(s): training with expert 0 only.")
+        elif warmup_epochs > 0:
+            print("[LoMoE] Warmup requested but model does not expose LoMoE controls; skipping warmup phase.")
+
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
@@ -174,6 +193,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            if warmup_active and (epoch + 1) >= warmup_epochs:
+                base_model.replicate_primary_expert(0)
+                base_model.set_single_expert_mode(None)
+                base_model.set_cluster_router_enabled(True)
+                warmup_active = False
+                print("[LoMoE] Warmup finished: replicated expert 0 weights to all experts and re-enabled router.")
+
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")

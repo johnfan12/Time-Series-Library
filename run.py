@@ -162,6 +162,8 @@ if __name__ == '__main__':
     parser.add_argument('--moe_topk', type=int, default=2, help='top-k experts to activate per sample')
     parser.add_argument('--moe_aux_loss_coeff', type=float, default=0.0,
                         help='coefficient for router load balancing loss')
+    parser.add_argument('--lomoe_warmup_epochs', type=int, default=0,
+                        help='train with a single expert for N epochs before enabling routing')
     parser.add_argument('--cluster_artifact_dir', type=str, default=None,
                         help='directory containing reducer.joblib / cluster.joblib for stats router')
     parser.add_argument('--cluster_feat_max_acf', type=int, default=6,

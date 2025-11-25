@@ -76,6 +76,31 @@ class LoMoEOutputHead(nn.Module):
         self.experts = nn.ModuleList([
             LoRALayer(in_features, out_features, rank=rank) for _ in range(num_experts)
         ])
+        self._forced_expert_idx: Optional[int] = None
+
+    @property
+    def num_experts(self) -> int:
+        return len(self.experts)
+
+    def set_single_expert_mode(self, expert_idx: Optional[int]) -> None:
+        if expert_idx is None:
+            self._forced_expert_idx = None
+            return
+        if expert_idx < 0 or expert_idx >= self.num_experts:
+            raise ValueError("expert_idx out of range")
+        self._forced_expert_idx = expert_idx
+
+    def replicate_expert(self, src_idx: int = 0) -> None:
+        if src_idx < 0 or src_idx >= self.num_experts:
+            raise ValueError("src_idx out of range")
+        src_state = {
+            name: param.detach().clone()
+            for name, param in self.experts[src_idx].state_dict().items()
+        }
+        for idx, expert in enumerate(self.experts):
+            if idx == src_idx:
+                continue
+            expert.load_state_dict(src_state)
 
     def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
         pooled = x.mean(dim=1)  # [B, d_model, patch_num]
@@ -97,8 +122,17 @@ class LoMoEOutputHead(nn.Module):
 
         # Router
         if router_override is None:
-            router_inputs = self._pool_router_features(x)
-            routing_weights, selected_indices, router_probs = self.router(router_inputs)
+            forced_idx = self._forced_expert_idx
+            if forced_idx is not None:
+                routing_weights = torch.ones(batch_size, 1, device=device)
+                selected_indices = torch.full(
+                    (batch_size, 1), forced_idx, dtype=torch.long, device=device
+                )
+                router_probs = torch.zeros(batch_size, self.router.num_experts, device=device)
+                router_probs[:, forced_idx] = 1.0
+            else:
+                router_inputs = self._pool_router_features(x)
+                routing_weights, selected_indices, router_probs = self.router(router_inputs)
         else:
             routing_weights, selected_indices, router_probs = router_override
 
@@ -135,6 +169,31 @@ class LoMoELinearHead(nn.Module):
         self.experts = nn.ModuleList([
             LoRALayer(d_model, base_linear.out_features, rank=rank) for _ in range(num_experts)
         ])
+        self._forced_expert_idx: Optional[int] = None
+
+    @property
+    def num_experts(self) -> int:
+        return len(self.experts)
+
+    def set_single_expert_mode(self, expert_idx: Optional[int]) -> None:
+        if expert_idx is None:
+            self._forced_expert_idx = None
+            return
+        if expert_idx < 0 or expert_idx >= self.num_experts:
+            raise ValueError("expert_idx out of range")
+        self._forced_expert_idx = expert_idx
+
+    def replicate_expert(self, src_idx: int = 0) -> None:
+        if src_idx < 0 or src_idx >= self.num_experts:
+            raise ValueError("src_idx out of range")
+        src_state = {
+            name: param.detach().clone()
+            for name, param in self.experts[src_idx].state_dict().items()
+        }
+        for idx, expert in enumerate(self.experts):
+            if idx == src_idx:
+                continue
+            expert.load_state_dict(src_state)
 
     def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
         return x.mean(dim=1)
@@ -146,8 +205,17 @@ class LoMoELinearHead(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         base_out = self.base_linear(x)
         if router_override is None:
-            router_inputs = self._pool_router_features(x)
-            routing_weights, selected_indices, router_probs = self.router(router_inputs)
+            forced_idx = self._forced_expert_idx
+            if forced_idx is not None:
+                routing_weights = torch.ones(batch_size, 1, device=x.device)
+                selected_indices = torch.full(
+                    (batch_size, 1), forced_idx, dtype=torch.long, device=x.device
+                )
+                router_probs = torch.zeros(batch_size, self.router.num_experts, device=x.device)
+                router_probs[:, forced_idx] = 1.0
+            else:
+                router_inputs = self._pool_router_features(x)
+                routing_weights, selected_indices, router_probs = self.router(router_inputs)
         else:
             routing_weights, selected_indices, router_probs = router_override
 
