@@ -1,7 +1,13 @@
+import json
+from pathlib import Path
+from typing import Optional, Tuple
+
 import torch
 
+from layers.ClusterRouter import ClusterRouterArtifacts, StatsClusterRouter
 from layers.LoMoE_Layers import LoMoEOutputHead
 from models.PatchTST import FlattenHead, Model as PatchTSTBase
+from utils.ts_stats import FeatureExtractionConfig
 
 
 class Model(PatchTSTBase):
@@ -10,7 +16,9 @@ class Model(PatchTSTBase):
     def __init__(self, configs, patch_len=16, stride=8):
         super().__init__(configs, patch_len=patch_len, stride=stride)
         self._router_probs = None
+        self._router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None
         self._lomoe_active = self.task_name in {'long_term_forecast', 'short_term_forecast'}
+        self.cluster_router: Optional[StatsClusterRouter] = None
         if self._lomoe_active:
             if not isinstance(self.head, FlattenHead):
                 raise ValueError('LoMoE head expects a FlattenHead for forecasting tasks.')
@@ -24,8 +32,43 @@ class Model(PatchTSTBase):
                 rank=rank,
                 top_k=top_k,
             )
+            cluster_dir = getattr(configs, 'cluster_artifact_dir', None)
+            if cluster_dir:
+                reducer_path = Path(cluster_dir) / 'reducer.joblib'
+                cluster_path = Path(cluster_dir) / 'cluster.joblib'
+                if not reducer_path.exists() or not cluster_path.exists():
+                    raise FileNotFoundError(
+                        f"Cluster artifacts not found under {cluster_dir}: "
+                        f"expected reducer.joblib and cluster.joblib"
+                    )
+                feature_cfg_path = Path(cluster_dir) / 'feature_cfg.json'
+                if feature_cfg_path.exists():
+                    with open(feature_cfg_path, 'r', encoding='utf-8') as f:
+                        cfg_dict = json.load(f)
+                    feature_cfg = FeatureExtractionConfig(**cfg_dict)
+                else:
+                    feature_cfg = FeatureExtractionConfig(
+                        max_acf_lag=getattr(configs, 'cluster_feat_max_acf', 6),
+                        top_k_fft=getattr(configs, 'cluster_feat_topk_fft', 3),
+                        poly_order=getattr(configs, 'cluster_feat_poly_order', 1),
+                        clip_value=getattr(configs, 'cluster_feat_clip', None),
+                    )
+                artifacts = ClusterRouterArtifacts(
+                    reducer_path=reducer_path,
+                    cluster_path=cluster_path,
+                    feature_cfg=feature_cfg,
+                )
+                device = torch.device(getattr(configs, 'device', 'cpu')) if hasattr(configs, 'device') else None
+                self.cluster_router = StatsClusterRouter(
+                    artifacts=artifacts,
+                    top_k=top_k,
+                    temperature=getattr(configs, 'cluster_router_temperature', 1.0),
+                    metric=getattr(configs, 'cluster_router_metric', 'euclidean'),
+                    device=device,
+                )
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+        stats_source = x_enc.detach() if self.cluster_router else None
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
@@ -38,11 +81,16 @@ class Model(PatchTSTBase):
         enc_out = enc_out.permute(0, 1, 3, 2)
 
         if self._lomoe_active:
-            head_out, router_probs = self.head(enc_out)
+            router_override = None
+            if self.cluster_router is not None and stats_source is not None:
+                router_override = self.cluster_router.route(stats_source)
+            head_out, router_probs = self.head(enc_out, router_override=router_override)
             self._router_probs = router_probs
+            self._router_override = router_override
         else:
             head_out = self.head(enc_out)
             self._router_probs = None
+            self._router_override = None
         dec_out = head_out.permute(0, 2, 1)
 
         dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
@@ -60,3 +108,6 @@ class Model(PatchTSTBase):
 
     def get_router_probs(self):
         return self._router_probs
+
+    def get_router_override(self):
+        return self._router_override

@@ -82,7 +82,11 @@ class LoMoEOutputHead(nn.Module):
         pooled = pooled.mean(dim=-1)  # [B, d_model]
         return pooled
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         batch_size = x.shape[0]
         n_vars = x.shape[1]
         device = x.device
@@ -92,8 +96,11 @@ class LoMoEOutputHead(nn.Module):
         base_out = self.base_head.dropout(base_out)
 
         # Router
-        router_inputs = self._pool_router_features(x)
-        routing_weights, selected_indices, router_probs = self.router(router_inputs)
+        if router_override is None:
+            router_inputs = self._pool_router_features(x)
+            routing_weights, selected_indices, router_probs = self.router(router_inputs)
+        else:
+            routing_weights, selected_indices, router_probs = router_override
 
         flat_2d = flattened.reshape(batch_size * n_vars, -1)
         expert_outputs = [expert(flat_2d).view(batch_size, n_vars, -1) for expert in self.experts]
@@ -132,10 +139,17 @@ class LoMoELinearHead(nn.Module):
     def _pool_router_features(self, x: torch.Tensor) -> torch.Tensor:
         return x.mean(dim=1)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        x: torch.Tensor,
+        router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         base_out = self.base_linear(x)
-        router_inputs = self._pool_router_features(x)
-        routing_weights, selected_indices, router_probs = self.router(router_inputs)
+        if router_override is None:
+            router_inputs = self._pool_router_features(x)
+            routing_weights, selected_indices, router_probs = self.router(router_inputs)
+        else:
+            routing_weights, selected_indices, router_probs = router_override
 
         expert_outputs = [expert(x) for expert in self.experts]
         moe_delta = torch.zeros_like(base_out)
