@@ -17,7 +17,7 @@ class Model(PatchTSTBase):
         super().__init__(configs, patch_len=patch_len, stride=stride)
         self._router_probs = None
         self._router_override: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None
-        self._lomoe_active = self.task_name in {'long_term_forecast', 'short_term_forecast'}
+        self._lomoe_active = self.task_name in {'long_term_forecast', 'short_term_forecast', 'multi_dataset_forecast'}
         self._cluster_router_enabled = True
         self._backbone_frozen = False
         self.cluster_router: Optional[StatsClusterRouter] = None
@@ -104,7 +104,7 @@ class Model(PatchTSTBase):
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        if self.task_name in {'long_term_forecast', 'short_term_forecast'}:
+        if self.task_name in {'long_term_forecast', 'short_term_forecast', 'multi_dataset_forecast'}:
             dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
             dec_out = dec_out[:, -self.pred_len:, :]
             if self._lomoe_active:
