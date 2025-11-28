@@ -229,6 +229,10 @@ class Exp_Multi_Dataset_Forecast(Exp_Basic):
                 base_model.replicate_primary_expert(0)
                 base_model.set_single_expert_mode(None)
                 base_model.set_cluster_router_enabled(True)
+                # Save checkpoint with replicated experts as the new best model
+                # This ensures phase 2 starts from a valid state with all experts initialized
+                torch.save(self.model.state_dict(), checkpoint_path)
+                print("[LoMoE] Saved checkpoint with replicated experts as new best model.")
                 if freeze_backbone_after_warmup and supports_lora_freeze:
                     base_model.freeze_backbone_for_lora()
                     print("[LoMoE] Backbone frozen: continuing training with LoRA experts only.")
