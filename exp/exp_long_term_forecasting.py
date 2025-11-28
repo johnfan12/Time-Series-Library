@@ -210,6 +210,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             early_stopping(vali_loss, self.model, path)
 
             if warmup_active and early_stopping.early_stop:
+                checkpoint_path = os.path.join(path, 'checkpoint.pth')
+                if os.path.exists(checkpoint_path):
+                    self.model.load_state_dict(torch.load(checkpoint_path))
+                    print("[LoMoE] Loaded best checkpoint from warmup before entering phase two.")
+                else:
+                    print("[LoMoE] Warning: expected checkpoint not found before phase two.")
                 base_model.replicate_primary_expert(0)
                 base_model.set_single_expert_mode(None)
                 base_model.set_cluster_router_enabled(True)
