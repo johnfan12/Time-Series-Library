@@ -72,5 +72,4 @@ python -u run.py \
     --patience $PATIENCE \
     --learning_rate $LEARNING_RATE \
     --batch_size $BATCH_SIZE \
-    --itr 1 \
-    --use_gpu
+    --itr 1 
