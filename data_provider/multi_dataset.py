@@ -14,6 +14,11 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset
 from data_provider.data_factory import data_dict
 
 
+# Fixed time feature dimension for cross-dataset compatibility
+# Using 4 features: month, day, weekday, hour (timeenc=0 style)
+FIXED_TIME_FEAT_DIM = 4
+
+
 @dataclass
 class MultiDatasetSpec:
     """Specification for a single dataset in multi-dataset mode."""
@@ -38,21 +43,46 @@ def load_multi_dataset_specs(spec_path: Path) -> List[MultiDatasetSpec]:
     raise ValueError("Multi-dataset spec must be a JSON array of dataset objects")
 
 
-class DatasetWithOrigin(Dataset):
-    """Wrapper that adds dataset origin index to each sample."""
+class DatasetWithUnifiedTimeFeatures(Dataset):
+    """Wrapper that unifies time feature dimensions across datasets."""
 
-    def __init__(self, base_dataset: Dataset, origin_idx: int, origin_name: str):
+    def __init__(self, base_dataset: Dataset, origin_idx: int, origin_name: str, 
+                 target_time_dim: int = FIXED_TIME_FEAT_DIM):
         self.base_dataset = base_dataset
         self.origin_idx = origin_idx
         self.origin_name = origin_name
+        self.target_time_dim = target_time_dim
 
     def __len__(self):
         return len(self.base_dataset)
 
+    def _pad_or_truncate_time_features(self, time_feat: np.ndarray) -> np.ndarray:
+        """Pad or truncate time features to target dimension."""
+        if time_feat.ndim == 1:
+            time_feat = time_feat.reshape(-1, 1)
+        
+        seq_len, feat_dim = time_feat.shape
+        
+        if feat_dim == self.target_time_dim:
+            return time_feat
+        elif feat_dim < self.target_time_dim:
+            # Pad with zeros
+            padding = np.zeros((seq_len, self.target_time_dim - feat_dim), dtype=time_feat.dtype)
+            return np.concatenate([time_feat, padding], axis=1)
+        else:
+            # Truncate
+            return time_feat[:, :self.target_time_dim]
+
     def __getitem__(self, idx):
         item = self.base_dataset[idx]
         # item is (seq_x, seq_y, seq_x_mark, seq_y_mark)
-        return item
+        seq_x, seq_y, seq_x_mark, seq_y_mark = item
+        
+        # Unify time feature dimensions
+        seq_x_mark = self._pad_or_truncate_time_features(seq_x_mark)
+        seq_y_mark = self._pad_or_truncate_time_features(seq_y_mark)
+        
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
 
 
 def create_multi_dataset(
@@ -102,7 +132,7 @@ def create_multi_dataset(
             seasonal_patterns='monthly',
         )
 
-        wrapped = DatasetWithOrigin(ds, i, spec.name)
+        wrapped = DatasetWithUnifiedTimeFeatures(ds, i, spec.name)
         datasets.append(wrapped)
         dataset_names.append(spec.name)
         print(f"  {spec.name} [{flag}]: {len(ds)} samples")
