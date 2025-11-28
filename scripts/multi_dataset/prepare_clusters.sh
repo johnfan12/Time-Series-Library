@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 
 SPEC_PATH="scripts/cluster_prep/specs/multi_dataset_univariate.json"
 OUTPUT_DIR="./cluster_artifacts/multi_dataset_univariate"
-N_CLUSTERS=4
+N_CLUSTERS=16
 SEQ_LEN=96
 
 echo "Preparing cluster artifacts for multi-dataset univariate training..."
