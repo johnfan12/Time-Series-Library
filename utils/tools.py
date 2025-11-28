@@ -60,6 +60,11 @@ class EarlyStopping:
         torch.save(model.state_dict(), path + '/' + 'checkpoint.pth')
         self.val_loss_min = val_loss
 
+    def reset(self):
+        """Clear early-stop trigger and patience counter."""
+        self.counter = 0
+        self.early_stop = False
+
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""

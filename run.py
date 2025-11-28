@@ -163,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('--moe_aux_loss_coeff', type=float, default=0.0,
                         help='coefficient for router load balancing loss')
     parser.add_argument('--lomoe_warmup_epochs', type=int, default=0,
-                        help='train with a single expert for N epochs before enabling routing')
+                        help='set >0 to enable patience-triggered warmup phase (value kept for backward compatibility)')
     parser.add_argument('--lomoe_freeze_backbone_after_warmup', action='store_true', default=False,
                         help='after warmup, freeze backbone weights and train LoRA experts only')
     parser.add_argument('--lomoe_phase2_lr_scale', type=float, default=1.0,

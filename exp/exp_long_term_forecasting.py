@@ -123,22 +123,23 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         )
         supports_lora_freeze = hasattr(base_model, 'freeze_backbone_for_lora')
         freeze_backbone_after_warmup = bool(getattr(self.args, 'lomoe_freeze_backbone_after_warmup', False))
-        warmup_active = supports_lomoe_control and warmup_epochs > 0
+        warmup_requested = warmup_epochs > 0
+        warmup_active = supports_lomoe_control and warmup_requested
         phase2_lr_scale = float(getattr(self.args, 'lomoe_phase2_lr_scale', 1.0))
         if phase2_lr_scale <= 0:
             raise ValueError('lomoe_phase2_lr_scale must be positive')
-        phase2_lr_pending = warmup_epochs > 0 and abs(phase2_lr_scale - 1.0) > 1e-9
+        phase2_lr_pending = warmup_active and abs(phase2_lr_scale - 1.0) > 1e-9
         phase2_lr_applied = False
 
         if warmup_active:
             base_model.set_single_expert_mode(0)
             base_model.set_cluster_router_enabled(False)
-            print(f"[LoMoE] Warmup enabled for {warmup_epochs} epoch(s): training with expert 0 only.")
-        elif warmup_epochs > 0:
+            print("[LoMoE] Warmup enabled: training with expert 0 only until patience triggers.")
+        elif warmup_requested:
             print("[LoMoE] Warmup requested but model does not expose LoMoE controls; skipping warmup phase.")
         if freeze_backbone_after_warmup and not supports_lora_freeze:
             print("[LoMoE] Backbone-freeze requested but model lacks freeze controls; keeping all params trainable.")
-        if freeze_backbone_after_warmup and warmup_epochs == 0:
+        if freeze_backbone_after_warmup and not warmup_requested:
             print("[LoMoE] Backbone-freeze flag is set but warmup duration is 0; skipping freeze.")
 
         for epoch in range(self.args.train_epochs):
@@ -205,7 +206,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            if warmup_active and (epoch + 1) >= warmup_epochs:
+
+            early_stopping(vali_loss, self.model, path)
+
+            if warmup_active and early_stopping.early_stop:
                 base_model.replicate_primary_expert(0)
                 base_model.set_single_expert_mode(None)
                 base_model.set_cluster_router_enabled(True)
@@ -221,10 +225,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     phase2_lr_applied = True
                     print(f"[LoMoE] Phase 2 LR scaling applied: {current_lr:.6e} -> {new_lr:.6e}.")
                 warmup_active = False
-                print("[LoMoE] Warmup finished: replicated expert 0 weights to all experts and re-enabled router.")
+                phase2_lr_pending = False
+                early_stopping.reset()
+                print("[LoMoE] Warmup ended due to patience trigger: replicated expert 0 weights, re-enabled router, and reset early stopping.")
+                # continue training without triggering early stop this epoch
 
-            early_stopping(vali_loss, self.model, path)
-            if early_stopping.early_stop:
+            if not warmup_active and early_stopping.early_stop:
                 print("Early stopping")
                 break
 
