@@ -7,6 +7,7 @@ from exp.exp_imputation import Exp_Imputation
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
+from exp.exp_multi_dataset_forecast import Exp_Multi_Dataset_Forecast
 from utils.print_args import print_args
 import random
 import numpy as np
@@ -183,6 +184,10 @@ if __name__ == '__main__':
     parser.add_argument('--cluster_router_metric', type=str, default='euclidean',
                         choices=['euclidean', 'cosine'], help='distance metric for stats router')
 
+    # Multi-dataset configs
+    parser.add_argument('--multi_dataset_spec', type=str, default=None,
+                        help='path to JSON file specifying multiple datasets for multi_dataset_forecast task')
+
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))
@@ -213,6 +218,8 @@ if __name__ == '__main__':
         Exp = Exp_Anomaly_Detection
     elif args.task_name == 'classification':
         Exp = Exp_Classification
+    elif args.task_name == 'multi_dataset_forecast':
+        Exp = Exp_Multi_Dataset_Forecast
     else:
         Exp = Exp_Long_Term_Forecast
 
