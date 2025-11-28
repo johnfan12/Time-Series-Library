@@ -160,9 +160,16 @@ if __name__ == '__main__':
     # LoMoE / LoRA configs
     parser.add_argument('--num_experts', type=int, default=4, help='number of experts in LoMoE head')
     parser.add_argument('--lora_rank', type=int, default=8, help='rank for LoRA experts')
+    parser.add_argument('--lora_alpha', type=float, default=16.0, help='alpha scaling for LoRA')
     parser.add_argument('--moe_topk', type=int, default=2, help='top-k experts to activate per sample')
     parser.add_argument('--moe_aux_loss_coeff', type=float, default=0.0,
                         help='coefficient for router load balancing loss')
+    parser.add_argument('--router_hidden_dim', type=int, default=None,
+                        help='hidden dimension for learned router MLP (E2E model)')
+    parser.add_argument('--router_temperature', type=float, default=1.0,
+                        help='temperature for learned router softmax (E2E model)')
+    parser.add_argument('--router_noise_std', type=float, default=0.1,
+                        help='noise std for router during training (E2E model, for load balancing)')
     parser.add_argument('--lomoe_warmup_epochs', type=int, default=0,
                         help='set >0 to enable patience-triggered warmup phase (value kept for backward compatibility)')
     parser.add_argument('--lomoe_freeze_backbone_after_warmup', action='store_true', default=False,
