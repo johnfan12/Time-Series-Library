@@ -67,7 +67,7 @@ class Model(nn.Module):
         # Prediction Head
         self.head_nf = configs.d_model * \
                        int((configs.seq_len - patch_len) / stride + 2)
-        if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+        if self.task_name in ('long_term_forecast', 'short_term_forecast', 'multi_dataset_forecast'):
             self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len,
                                     head_dropout=configs.dropout)
         elif self.task_name == 'imputation' or self.task_name == 'anomaly_detection':
@@ -211,7 +211,7 @@ class Model(nn.Module):
         return output
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+        if self.task_name in ('long_term_forecast', 'short_term_forecast', 'multi_dataset_forecast'):
             dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
             return dec_out[:, -self.pred_len:, :]  # [B, L, D]
         if self.task_name == 'imputation':
