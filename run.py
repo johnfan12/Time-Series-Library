@@ -170,6 +170,12 @@ if __name__ == '__main__':
                         help='temperature for learned router softmax (E2E model)')
     parser.add_argument('--router_noise_std', type=float, default=0.1,
                         help='noise std for router during training (E2E model, for load balancing)')
+    parser.add_argument('--router_feat_acf_lags', type=int, default=5,
+                        help='number of ACF lags for E2E_F router feature extraction')
+    parser.add_argument('--router_feat_fft_topk', type=int, default=3,
+                        help='number of top FFT peaks for E2E_F router feature extraction')
+    parser.add_argument('--router_feat_include_trend', action='store_true', default=True,
+                        help='include trend slope in E2E_F router features')
     parser.add_argument('--lomoe_warmup_epochs', type=int, default=0,
                         help='set >0 to enable patience-triggered warmup phase (value kept for backward compatibility)')
     parser.add_argument('--lomoe_freeze_backbone_after_warmup', action='store_true', default=False,

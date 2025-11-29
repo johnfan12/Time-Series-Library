@@ -1,7 +1,7 @@
 import os
 import torch
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
-    Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, PatchTST_LoMoE, PatchTST_LoMoE_E2E, MICN, Crossformer, FiLM, iTransformer, \
+    Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, PatchTST_LoMoE, PatchTST_LoMoE_E2E, PatchTST_LoMoE_E2E_F, MICN, Crossformer, FiLM, iTransformer, \
     iTransformer_LoMoE, TimeXer_LoMoE, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
     WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter
@@ -24,6 +24,7 @@ class Exp_Basic(object):
             'PatchTST': PatchTST,
             'PatchTST_LoMoE': PatchTST_LoMoE,
             'PatchTST_LoMoE_E2E': PatchTST_LoMoE_E2E,
+            'PatchTST_LoMoE_E2E_F': PatchTST_LoMoE_E2E_F,
             'Pyraformer': Pyraformer,
             'MICN': MICN,
             'Crossformer': Crossformer,
