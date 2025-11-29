@@ -1,0 +1,67 @@
+[
+  {
+    "name": "ETTh1",
+    "data": "ETTh1",
+    "root_path": "./dataset/ETT-small/",
+    "data_path": "ETTh1.csv",
+    "target": "OT",
+    "freq": "h"
+  },
+  {
+    "name": "ETTh2",
+    "data": "ETTh2",
+    "root_path": "./dataset/ETT-small/",
+    "data_path": "ETTh2.csv",
+    "target": "OT",
+    "freq": "h"
+  },
+  {
+    "name": "ETTm1",
+    "data": "ETTm1",
+    "root_path": "./dataset/ETT-small/",
+    "data_path": "ETTm1.csv",
+    "target": "OT",
+    "freq": "t"
+  },
+  {
+    "name": "ETTm2",
+    "data": "ETTm2",
+    "root_path": "./dataset/ETT-small/",
+    "data_path": "ETTm2.csv",
+    "target": "OT",
+    "freq": "t"
+  },
+  {
+    "name": "Weather",
+    "data": "custom",
+    "root_path": "./dataset/weather/",
+    "data_path": "weather.csv",
+    "target": "OT",
+    "freq": "h"
+  },
+  {
+    "name": "ECL",
+    "data": "custom",
+    "root_path": "./dataset/electricity/",
+    "data_path": "electricity.csv",
+    "target": "OT",
+    "freq": "h",
+    "test_only": true
+  },
+  {
+    "name": "Traffic",
+    "data": "custom",
+    "root_path": "./dataset/traffic/",
+    "data_path": "traffic.csv",
+    "target": "OT",
+    "freq": "h"
+  },
+  {
+    "name": "Exchange",
+    "data": "custom",
+    "root_path": "./dataset/exchange_rate/",
+    "data_path": "exchange_rate.csv",
+    "target": "OT",
+    "freq": "d"
+  }
+]
