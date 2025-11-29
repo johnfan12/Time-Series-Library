@@ -28,6 +28,7 @@ class MultiDatasetSpec:
     data_path: str
     target: str = 'OT'
     freq: str = 'h'
+    test_only: bool = False  # If True, skip this dataset for train/val (generalization experiment)
 
     @classmethod
     def from_dict(cls, d: Dict) -> 'MultiDatasetSpec':
@@ -112,6 +113,11 @@ def create_multi_dataset(
     timeenc = 0 if getattr(args_template, 'embed', 'timeF') != 'timeF' else 1
 
     for i, spec in enumerate(specs):
+        # Skip test_only datasets for train/val
+        if spec.test_only and flag in ('train', 'val'):
+            print(f"  {spec.name} [{flag}]: SKIPPED (test_only=True)")
+            continue
+            
         Data = data_dict[spec.data]
         
         # Create a minimal args namespace for this dataset
